@@ -1,24 +1,28 @@
-// +build !gopherjs
+//go:build gopherjs
+// +build gopherjs
 
 package main
 
 import (
+	"archive/zip"
+	"bytes"
+	"encoding/binary"
+	"fmt"
 	"io"
 	"os"
-	"fmt"
-	"bytes"
-	"strings"
 	"path/filepath"
-	"encoding/binary"
-	
+	"strings"
+
 	"pyinstxtractor-go/marshal"
+
 	"github.com/go-restruct/restruct"
-	// "github.com/k0kubun/pp/v3"
+	"github.com/gopherjs/gopherjs/js"
 )
 
 type PyInstArchive struct {
 	inFilePath              string
-	fPtr                    io.ReadSeekCloser
+	outZip                  *zip.Writer
+	fPtr                    io.ReadSeeker
 	fileSize                int64
 	cookiePosition          int64
 	pyInstVersion           int64
@@ -31,37 +35,36 @@ type PyInstArchive struct {
 	tableOfContents         []CTOCEntry
 	pycMagic                [4]byte
 	gotPycMagic             bool
-	barePycsList            []string
+	barePycsList            []*barePyc
+}
+
+type barePyc struct {
+	filepath string
+	contents []byte
+}
+
+var logFunc *js.Object
+
+func appendLog(logLine string) {
+	logFunc.Invoke(logLine)
 }
 
 func (p *PyInstArchive) Open() bool {
-	var err error
-	if p.fPtr, err = os.Open(p.inFilePath); err != nil {
-		fmt.Printf("[!] Couldn't open %s\n", p.inFilePath)
-		return false
-	}
-	var fileInfo os.FileInfo
-	if fileInfo, err = os.Stat(p.inFilePath); err != nil {
-		fmt.Printf("[!] Couldn't get size of file %s\n", p.inFilePath)
-		return false
-	}
-	p.fileSize = fileInfo.Size()
 	return true
 }
 
 func (p *PyInstArchive) Close() {
-	p.fPtr.Close()
 }
 
 func (p *PyInstArchive) CheckFile() bool {
-	fmt.Printf("[+] Processing %s\n", p.inFilePath)
+	appendLog(fmt.Sprintf("[+] Processing %s\n", p.inFilePath))
 
 	var searchChunkSize int64 = 8192
 	endPosition := p.fileSize
 	p.cookiePosition = -1
 
 	if endPosition < int64(len(PYINST_MAGIC)) {
-		fmt.Println("[!] Error : File is too short or truncated")
+		appendLog("[!] Error : File is too short or truncated\n")
 		return false
 	}
 
@@ -78,7 +81,7 @@ func (p *PyInstArchive) CheckFile() bool {
 		}
 
 		if _, err := p.fPtr.Seek(startPosition, io.SeekStart); err != nil {
-			fmt.Println("[!] File seek failed")
+			appendLog("[!] File seek failed\n")
 			return false
 		}
 		var data []byte = make([]byte, searchChunkSize)
@@ -95,31 +98,31 @@ func (p *PyInstArchive) CheckFile() bool {
 		}
 	}
 	if p.cookiePosition == -1 {
-		fmt.Println("[!] Error : Missing cookie, unsupported pyinstaller version or not a pyinstaller archive")
+		appendLog("[!] Error : Missing cookie, unsupported pyinstaller version or not a pyinstaller archive\n")
 		return false
 	}
-	p.fPtr.Seek(p.cookiePosition + PYINST20_COOKIE_SIZE, io.SeekStart)
+	p.fPtr.Seek(p.cookiePosition+PYINST20_COOKIE_SIZE, io.SeekStart)
 
 	var cookie []byte = make([]byte, 64)
 	if _, err := p.fPtr.Read(cookie); err != nil {
-		fmt.Println("[!] Failed to read cookie!")
+		appendLog("[!] Failed to read cookie!\n")
 		return false
 	}
 
 	cookie = bytes.ToLower(cookie)
 	if bytes.Contains(cookie, []byte("python")) {
 		p.pyInstVersion = 21
-		fmt.Println("[+] Pyinstaller version: 2.1+")
+		appendLog("[+] Pyinstaller version: 2.1+\n")
 	} else {
 		p.pyInstVersion = 20
-		fmt.Println("[+] Pyinstaller version: 2.0")
+		appendLog("[+] Pyinstaller version: 2.0\n")
 	}
 	return true
 }
 
 func (p *PyInstArchive) GetCArchiveInfo() bool {
 	failFunc := func() bool {
-		fmt.Println("[!] Error : The file is not a pyinstaller archive")
+		appendLog("[!] Error : The file is not a pyinstaller archive\n")
 		return false
 	}
 
@@ -131,8 +134,8 @@ func (p *PyInstArchive) GetCArchiveInfo() bool {
 	}
 
 	printPythonVerLenPkg := func(pyMajVer, pyMinVer, lenPkg int) {
-		fmt.Printf("[+] Python version: %d.%d\n", pyMajVer, pyMinVer)
-		fmt.Printf("[+] Length of package: %d bytes\n", lenPkg)
+		appendLog(fmt.Sprintf("[+] Python version: %d.%d\n", pyMajVer, pyMinVer))
+		appendLog(fmt.Sprintf("[+] Length of package: %d bytes\n", lenPkg))
 	}
 
 	calculateTocPosition := func(cookieSize, lengthOfPackage, toc, tocLen int) {
@@ -180,7 +183,7 @@ func (p *PyInstArchive) GetCArchiveInfo() bool {
 		if err := restruct.Unpack(cookieBuf, binary.LittleEndian, &pyInst21Cookie); err != nil {
 			return failFunc()
 		}
-		fmt.Println("[+] Python library file:", string(bytes.Trim(pyInst21Cookie.PythonLibName, "\x00")))
+		appendLog("[+] Python library file:" + string(bytes.Trim(pyInst21Cookie.PythonLibName, "\x00")) + "\n")
 		p.pythonMajorVersion, p.pythonMinorVersion = getPyMajMinVersion(pyInst21Cookie.PythonVersion)
 		printPythonVerLenPkg(p.pythonMajorVersion, p.pythonMinorVersion, pyInst21Cookie.LengthOfPackage)
 
@@ -217,30 +220,22 @@ func (p *PyInstArchive) ParseTOC() {
 		nameBuffer = bytes.TrimRight(nameBuffer, "\x00")
 		if len(nameBuffer) == 0 {
 			ctocEntry.Name = randomString()
-			fmt.Printf("[!] Warning: Found an unamed file in CArchive. Using random name %s\n", ctocEntry.Name)
+			appendLog(fmt.Sprintf("[!] Warning: Found an unamed file in CArchive. Using random name %s\n", ctocEntry.Name))
 		} else {
 			ctocEntry.Name = string(nameBuffer)
 		}
 
-		// fmt.Printf("%+v\n", ctocEntry)
 		p.tableOfContents = append(p.tableOfContents, ctocEntry)
 		parsedLen += int64(ctocEntry.EntrySize)
 	}
-	fmt.Printf("[+] Found %d files in CArchive\n", len(p.tableOfContents))
+	appendLog(fmt.Sprintf("[+] Found %d files in CArchive\n", len(p.tableOfContents)))
 }
 
 func (p *PyInstArchive) ExtractFiles() {
-	fmt.Println("[+] Beginning extraction...please standby")
-	cwd, _ := os.Getwd()
-
-	extractionDir := filepath.Join(cwd, filepath.Base(p.inFilePath)+"_extracted")
-	if _, err := os.Stat(extractionDir); os.IsNotExist(err) {
-		os.Mkdir(extractionDir, os.ModeDir)
-	}
-	os.Chdir(extractionDir)
+	fmt.Sprintln("[+] Beginning extraction...please standby")
 
 	for _, entry := range p.tableOfContents {
-		p.fPtr.Seek(p.overlayPosition + int64(entry.EntryPosition), io.SeekStart)
+		p.fPtr.Seek(p.overlayPosition+int64(entry.EntryPosition), io.SeekStart)
 		data := make([]byte, entry.DataSize)
 		p.fPtr.Read(data)
 
@@ -249,13 +244,13 @@ func (p *PyInstArchive) ExtractFiles() {
 			compressedData := data[:]
 			data, err = zlibDecompress(compressedData)
 			if err != nil {
-				fmt.Printf("[!] Error: Failed to decompress %s in CArchive, extracting as-is", entry.Name)
+				appendLog(fmt.Sprintf("[!] Error: Failed to decompress %s in CArchive, extracting as-is", entry.Name))
 				p.writeRawData(entry.Name, compressedData)
 				continue
 			}
 
 			if len(data) != entry.UncompressedDataSize {
-				fmt.Printf("[!] Warning: Decompressed size mismatch for file %s\n", entry.Name)
+				appendLog(fmt.Sprintf("[!] Warning: Decompressed size mismatch for file %s\n", entry.Name))
 			}
 		}
 
@@ -266,21 +261,16 @@ func (p *PyInstArchive) ExtractFiles() {
 			continue
 		}
 
-		basePath := filepath.Dir(entry.Name)
-		if basePath != "." {
-			if _, err := os.Stat(basePath); os.IsNotExist(err) {
-				os.MkdirAll(basePath, os.ModeDir)
-			}
-		}
 		if entry.TypeCompressedData == 's' {
 			// s -> ARCHIVE_ITEM_PYSOURCE
 			// Entry point are expected to be python scripts
-			fmt.Printf("[+] Possible entry point: %s.pyc\n", entry.Name)
+			appendLog(fmt.Sprintf("[+] Possible entry point: %s.pyc\n", entry.Name))
 			if !p.gotPycMagic {
 				// if we don't have the pyc header yet, fix them in a later pass
-				p.barePycsList = append(p.barePycsList, entry.Name+".pyc")
+				p.barePycsList = append(p.barePycsList, &barePyc{entry.Name + ".pyc", data})
+			} else {
+				p.writePyc(entry.Name+".pyc", data)
 			}
-			p.writePyc(entry.Name+".pyc", data)
 		} else if entry.TypeCompressedData == 'M' || entry.TypeCompressedData == 'm' {
 			// M -> ARCHIVE_ITEM_PYPACKAGE
 			// m -> ARCHIVE_ITEM_PYMODULE
@@ -299,20 +289,20 @@ func (p *PyInstArchive) ExtractFiles() {
 				// >= pyinstaller 5.3
 				if !p.gotPycMagic {
 					// if we don't have the pyc header yet, fix them in a later pass
-					p.barePycsList = append(p.barePycsList, entry.Name+".pyc")
+					p.barePycsList = append(p.barePycsList, &barePyc{entry.Name + ".pyc", data})
+				} else {
+					p.writePyc(entry.Name+".pyc", data)
 				}
-				p.writePyc(entry.Name+".pyc", data)
+			}
+		} else if entry.TypeCompressedData == 'z' || entry.TypeCompressedData == 'Z' {
+			if p.pythonMajorVersion == 3 {
+				p.extractPYZ(entry.Name, data)
+			} else {
+				appendLog(fmt.Sprintf("[!] Skipping pyz extraction as Python %d.%d is not supported\n", p.pythonMajorVersion, p.pythonMinorVersion))
+				p.writeRawData(entry.Name, data)
 			}
 		} else {
 			p.writeRawData(entry.Name, data)
-
-			if entry.TypeCompressedData == 'z' || entry.TypeCompressedData == 'Z' {
-				if p.pythonMajorVersion == 3 {
-					p.extractPYZ(entry.Name)
-				} else {
-					fmt.Printf("[!] Skipping pyz extraction as Python %d.%d is not supported\n", p.pythonMajorVersion, p.pythonMinorVersion)
-				}
-			}
 		}
 	}
 	p.fixBarePycs()
@@ -320,31 +310,18 @@ func (p *PyInstArchive) ExtractFiles() {
 
 func (p *PyInstArchive) fixBarePycs() {
 	for _, pycFile := range p.barePycsList {
-		f, err := os.OpenFile(pycFile, os.O_RDWR, 0666)
-		if err != nil {
-			fmt.Printf("[!] Failed to fix header of file %s\n", pycFile)
-			continue
-		}
-		f.Write(p.pycMagic[:])
-		f.Close()
+		p.writePyc(pycFile.filepath, pycFile.contents)
 	}
 }
 
-func (p *PyInstArchive) extractPYZ(path string) {
+func (p *PyInstArchive) extractPYZ(path string, pyzData []byte) {
 	dirName := path + "_extracted"
-	if _, err := os.Stat(dirName); os.IsNotExist(err) {
-		os.MkdirAll(dirName, os.ModeDir)
-	}
+	f := bytes.NewReader(pyzData)
 
-	f, err := os.Open(path)
-	if err != nil {
-		fmt.Println("[!] Failed to extract pyz", err)
-		return
-	}
 	var pyzMagic []byte = make([]byte, 4)
 	f.Read(pyzMagic)
 	if !bytes.Equal(pyzMagic, []byte("PYZ\x00")) {
-		fmt.Println("[!] Magic header in PYZ archive doesn't match")
+		appendLog("[!] Magic header in PYZ archive doesn't match\n")
 	}
 
 	var pyzPycMagic []byte = make([]byte, 4)
@@ -356,7 +333,7 @@ func (p *PyInstArchive) extractPYZ(path string) {
 	} else if !bytes.Equal(p.pycMagic[:], pyzPycMagic) {
 		copy(p.pycMagic[:], pyzPycMagic)
 		p.gotPycMagic = true
-		fmt.Println("[!] Warning: pyc magic of files inside PYZ archive are different from those in CArchive")
+		appendLog("[!] Warning: pyc magic of files inside PYZ archive are different from those in CArchive\n")
 	}
 
 	var pyzTocPositionBytes []byte = make([]byte, 4)
@@ -367,12 +344,11 @@ func (p *PyInstArchive) extractPYZ(path string) {
 	su := marshal.NewUnmarshaler(f)
 	obj := su.Unmarshal()
 	if obj == nil {
-		fmt.Println("Unmarshalling failed")
+		appendLog("Unmarshalling failed\n")
 	} else {
-		// pp.Print(obj)
 		listobj := obj.(*marshal.PyListObject)
 		listobjItems := listobj.GetItems()
-		fmt.Printf("[+] Found %d files in PYZArchive\n", len(listobjItems))
+		appendLog(fmt.Sprintf("[+] Found %d files in PYZArchive\n", len(listobjItems)))
 
 		for _, item := range listobjItems {
 			item := item.(*marshal.PyListObject)
@@ -394,13 +370,6 @@ func (p *PyInstArchive) extractPYZ(path string) {
 				filenamepath = filepath.Join(dirName, filename+".pyc")
 			}
 
-			fileDir := filepath.Dir(filenamepath)
-			if fileDir != "." {
-				if _, err := os.Stat(fileDir); os.IsNotExist(err) {
-					os.MkdirAll(fileDir, os.ModeDir)
-				}
-			}
-
 			f.Seek(int64(position), io.SeekStart)
 
 			var compressedData []byte = make([]byte, length)
@@ -408,20 +377,24 @@ func (p *PyInstArchive) extractPYZ(path string) {
 
 			decompressedData, err := zlibDecompress(compressedData)
 			if err != nil {
-				fmt.Printf("[!] Error: Failed to decompress %s in PYZArchive, likely encrypted. Extracting as is", filenamepath)
-				p.writeRawData(filenamepath + ".pyc.encrypted", compressedData)
+				appendLog(fmt.Sprintf("[!] Error: Failed to decompress %s in PYZArchive, likely encrypted. Extracting as is", filenamepath))
+				p.writeRawData(filenamepath+".pyc.encrypted", compressedData)
 			} else {
 				p.writePyc(filenamepath, decompressedData)
 			}
 		}
 	}
-	f.Close()
+	// f.Close()
 }
 
 func (p *PyInstArchive) writePyc(path string, data []byte) {
-	f, err := os.Create(path)
+	f, err := p.outZip.CreateHeader(&zip.FileHeader{
+		Name:   path,
+		Method: zip.Store,
+	})
+
 	if err != nil {
-		fmt.Printf("[!] Failed to write file %s\n", path)
+		appendLog(fmt.Sprintf("[!] Failed to write file %s\n", path))
 		return
 	}
 	// pyc magic
@@ -438,6 +411,7 @@ func (p *PyInstArchive) writePyc(path string, data []byte) {
 		}
 	}
 	f.Write(data)
+	p.outZip.Flush()
 }
 
 func (p *PyInstArchive) writeRawData(path string, data []byte) {
@@ -446,35 +420,40 @@ func (p *PyInstArchive) writeRawData(path string, data []byte) {
 	path = strings.ReplaceAll(path, "/", string(os.PathSeparator))
 	path = strings.ReplaceAll(path, "..", "__")
 
-	dir := filepath.Dir(path)
-	if dir != "." {
-		if _, err := os.Stat(dir); os.IsNotExist(err) {
-			os.MkdirAll(dir, os.ModeDir)
-		}
-	}
-	os.WriteFile(path, data, 0666)
+	f, _ := p.outZip.CreateHeader(&zip.FileHeader{
+		Name:   path,
+		Method: zip.Store,
+	})
+
+	f.Write(data)
 }
 
-func extract_exe(fileName string) {
-	arch := PyInstArchive{inFilePath: fileName}
+func main() {
+	js.Global.Set("extract_exe", extract_exe)
+}
+
+func extract_exe(fileName string, inbuf []byte, logFn *js.Object) []byte {
+	logFunc = logFn
+	var zipData bytes.Buffer
+	arch := PyInstArchive{
+		outZip:     zip.NewWriter(&zipData),
+		inFilePath: fileName,
+		fPtr:       bytes.NewReader(inbuf),
+		fileSize:   int64(len(inbuf)),
+	}
 
 	if arch.Open() {
 		if arch.CheckFile() {
 			if arch.GetCArchiveInfo() {
 				arch.ParseTOC()
 				arch.ExtractFiles()
-				fmt.Printf("[+] Successfully extracted pyinstaller archive: %s\n", fileName)
-				fmt.Println("\nYou can now use a python decompiler on the pyc files within the extracted directory")
+				appendLog(fmt.Sprintf("[+] Successfully extracted pyinstaller archive: %s\n", fileName))
+				appendLog("\nYou can now use a python decompiler on the pyc files within the extracted directory\n")
+				arch.outZip.Close()
+				return zipData.Bytes()
 			}
 		}
 		arch.Close()
 	}
-}
-
-func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("[+] Usage pyinstxtractor-ng <filename>')")
-		return
-	}
-	extract_exe(os.Args[1])
+	return nil
 }

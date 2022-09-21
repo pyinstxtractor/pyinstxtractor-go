@@ -1,0 +1,4 @@
+.vscode
+*.exe
+public/js/pyinstxtractor-go.js
+public/js/pyinstxtractor-go.js.map

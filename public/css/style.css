@@ -1,0 +1,17 @@
+.bottom-badges {
+    display: block;
+    padding: 1rem;
+    text-align: center;
+  }
+  
+  .output-box {
+    overflow-y: scroll;
+    resize: none;
+    font-family: "Consolas", "Courier New", "Monospaced";
+  }
+  
+  .output-box-div {
+    padding-top: 2rem;
+    padding-bottom: 1rem;
+  }
+  
