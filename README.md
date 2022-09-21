@@ -10,7 +10,7 @@ go build
 
 ## Compiling for Web
 
-GopherJS requires Go 1.18 or newer. For more details check https://github.com/gopherjs/gopherjs#installation-and-usage
+GopherJS requires Go 1.18.x. For more details check https://github.com/gopherjs/gopherjs#installation-and-usage
 
 ```
 go install github.com/gopherjs/gopherjs@v1.18.0-beta1
