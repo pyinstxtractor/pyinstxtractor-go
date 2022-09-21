@@ -1,4 +1,4 @@
-# Pyinstxtractor-GO
+# Pyinstxtractor-Go🌐
 
 PyInstaller Extractor developed in Golang.
 
