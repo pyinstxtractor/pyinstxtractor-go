@@ -57,9 +57,9 @@ document
                     else {
                         appendLog("[+] Extraction completed successfully, downloading zip");
                         downloadBlob(outFile, file.name + "_extracted.zip", "application/octet-stream");
-                        process_btn.innerText = "⚙️Process";
-                        process_btn.disabled = false;
                     }
+                    process_btn.innerText = "⚙️Process";
+                    process_btn.disabled = false;
                     break;
                 }
                 case "log": {
