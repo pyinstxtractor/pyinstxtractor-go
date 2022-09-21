@@ -15,5 +15,5 @@ GopherJS requires Go 1.18 or newer. For more details check https://github.com/go
 ```
 go install github.com/gopherjs/gopherjs@v1.18.0-beta1
 
-gopherjs.exe build --minify --tags=gopherjs -o public\js\pyinstxtractor-go.js
+gopherjs build --minify --tags=gopherjs -o public/js/pyinstxtractor-go.js
 ```
