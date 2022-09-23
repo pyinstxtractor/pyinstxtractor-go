@@ -377,7 +377,7 @@ func (p *PyInstArchive) extractPYZ(path string, pyzData []byte) {
 
 			decompressedData, err := zlibDecompress(compressedData)
 			if err != nil {
-				appendLog(fmt.Sprintf("[!] Error: Failed to decompress %s in PYZArchive, likely encrypted. Extracting as is", filenamepath))
+				appendLog(fmt.Sprintf("[!] Error: Failed to decompress %s in PYZArchive, likely encrypted. Extracting as is\n", filenamepath))
 				p.writeRawData(filenamepath+".pyc.encrypted", compressedData)
 			} else {
 				p.writePyc(filenamepath, decompressedData)
