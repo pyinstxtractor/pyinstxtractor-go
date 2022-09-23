@@ -183,7 +183,7 @@ func (p *PyInstArchive) GetCArchiveInfo() bool {
 		if err := restruct.Unpack(cookieBuf, binary.LittleEndian, &pyInst21Cookie); err != nil {
 			return failFunc()
 		}
-		appendLog("[+] Python library file:" + string(bytes.Trim(pyInst21Cookie.PythonLibName, "\x00")) + "\n")
+		appendLog("[+] Python library file: " + string(bytes.Trim(pyInst21Cookie.PythonLibName, "\x00")) + "\n")
 		p.pythonMajorVersion, p.pythonMinorVersion = getPyMajMinVersion(pyInst21Cookie.PythonVersion)
 		printPythonVerLenPkg(p.pythonMajorVersion, p.pythonMinorVersion, pyInst21Cookie.LengthOfPackage)
 
@@ -232,7 +232,7 @@ func (p *PyInstArchive) ParseTOC() {
 }
 
 func (p *PyInstArchive) ExtractFiles() {
-	fmt.Sprintln("[+] Beginning extraction...please standby")
+	appendLog("[+] Beginning extraction...please standby\n")
 
 	for _, entry := range p.tableOfContents {
 		p.fPtr.Seek(p.overlayPosition+int64(entry.EntryPosition), io.SeekStart)
@@ -244,7 +244,7 @@ func (p *PyInstArchive) ExtractFiles() {
 			compressedData := data[:]
 			data, err = zlibDecompress(compressedData)
 			if err != nil {
-				appendLog(fmt.Sprintf("[!] Error: Failed to decompress %s in CArchive, extracting as-is", entry.Name))
+				appendLog(fmt.Sprintf("[!] Error: Failed to decompress %s in CArchive, extracting as-is\n", entry.Name))
 				p.writeRawData(entry.Name, compressedData)
 				continue
 			}
