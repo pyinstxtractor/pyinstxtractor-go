@@ -12,7 +12,9 @@ Try it out at https://pyinstxtractor-web.netlify.app/
 
 ## Known Limitations
 
-The tool (both desktop & web) works best with Python 3.x based PyInstaller executables. Python 2.x based executables are still supported but the PYZ archive wqonrt be extracted.
+- The tool (both desktop & web) works best with Python 3.x based PyInstaller executables. Python 2.x based executables are still supported but the PYZ archive won't be extracted.
+
+- Extracting large files using the web version may crash the browser specifically on mobile devices with low RAM.
 
 ## See also
 
