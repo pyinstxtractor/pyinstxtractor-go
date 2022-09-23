@@ -16,6 +16,8 @@ Try it out at https://pyinstxtractor-web.netlify.app/
 
 - Extracting large files using the web version may crash the browser specifically on mobile devices with low RAM.
 
+- Encrypted pyz archives are not supported at present.
+
 ## See also
 
 - [pyinstxtractor](https://github.com/extremecoders-re/pyinstxtractor): The original tool developed in Python.
