@@ -133,12 +133,12 @@ func (p *PyInstArchive) GetCArchiveInfo() bool {
 		return version / 10, version % 10
 	}
 
-	printPythonVerLenPkg := func(pyMajVer, pyMinVer, lenPkg int) {
+	printPythonVerLenPkg := func(pyMajVer, pyMinVer int, lenPkg uint) {
 		appendLog(fmt.Sprintf("[+] Python version: %d.%d\n", pyMajVer, pyMinVer))
 		appendLog(fmt.Sprintf("[+] Length of package: %d bytes\n", lenPkg))
 	}
 
-	calculateTocPosition := func(cookieSize, lengthOfPackage, toc, tocLen int) {
+	calculateTocPosition := func(cookieSize int, lengthOfPackage, toc uint, tocLen int) {
 		// Additional data after the cookie
 		tailBytes := p.fileSize - p.cookiePosition - int64(cookieSize)
 
@@ -165,12 +165,12 @@ func (p *PyInstArchive) GetCArchiveInfo() bool {
 		}
 
 		p.pythonMajorVersion, p.pythonMinorVersion = getPyMajMinVersion(pyInst20Cookie.PythonVersion)
-		printPythonVerLenPkg(p.pythonMajorVersion, p.pythonMinorVersion, pyInst20Cookie.LengthOfPackage)
+		printPythonVerLenPkg(p.pythonMajorVersion, p.pythonMinorVersion, uint(pyInst20Cookie.LengthOfPackage))
 
 		calculateTocPosition(
 			PYINST20_COOKIE_SIZE,
-			pyInst20Cookie.LengthOfPackage,
-			pyInst20Cookie.Toc,
+			uint(pyInst20Cookie.LengthOfPackage),
+			uint(pyInst20Cookie.Toc),
 			pyInst20Cookie.TocLen,
 		)
 
@@ -249,7 +249,7 @@ func (p *PyInstArchive) ExtractFiles() {
 				continue
 			}
 
-			if len(data) != entry.UncompressedDataSize {
+			if uint(len(data)) != entry.UncompressedDataSize {
 				appendLog(fmt.Sprintf("[!] Warning: Decompressed size mismatch for file %s\n", entry.Name))
 			}
 		}

@@ -1,10 +1,10 @@
 package main
 
 import (
-	"io"
 	"bytes"
-	"math/rand"
 	"compress/zlib"
+	"io"
+	"math/rand"
 )
 
 const (
@@ -24,8 +24,8 @@ type PyInst20Cookie struct {
 
 type PyInst21Cookie struct {
 	Magic           []byte `struct:"[8]byte"`
-	LengthOfPackage int    `struct:"int32,big"`
-	Toc             int    `struct:"int32,big"`
+	LengthOfPackage uint   `struct:"uint32,big"`
+	Toc             uint   `struct:"uint32,big"`
 	TocLen          int    `struct:"int32,big"`
 	PythonVersion   int    `struct:"int32,big"`
 	PythonLibName   []byte `struct:"[64]byte"`
@@ -33,9 +33,9 @@ type PyInst21Cookie struct {
 
 type CTOCEntry struct {
 	EntrySize            int  `struct:"int32,big"`
-	EntryPosition        int  `struct:"int32,big"`
-	DataSize             int  `struct:"int32,big"`
-	UncompressedDataSize int  `struct:"int32,big"`
+	EntryPosition        uint `struct:"uint32,big"`
+	DataSize             uint `struct:"uint32,big"`
+	UncompressedDataSize uint `struct:"uint32,big"`
 	ComressionFlag       int8 `struct:"int8"`
 	TypeCompressedData   byte `struct:"byte"`
 	Name                 string

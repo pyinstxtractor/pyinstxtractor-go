@@ -21,7 +21,7 @@ Try it out at https://pyinstxtractor-web.netlify.app/
 ## See also
 
 - [pyinstxtractor](https://github.com/extremecoders-re/pyinstxtractor): The original tool developed in Python.
-- [pyinstxtractor-ng](https://github.com/pyinstxtractor/pyinstxtractor-ng): Same as pyinsxtractor but this one doesn't require Python to run and can extract all supported pyinstaller versions.
+- [pyinstxtractor-ng](https://github.com/pyinstxtractor/pyinstxtractor-ng): Same as pyinsxtractor but this doesn't require Python to run and can extract all supported pyinstaller versions.
 
 
 ## Compiling for Deskop
