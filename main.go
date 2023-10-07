@@ -409,7 +409,7 @@ func (p *PyInstArchive) extractPYZ(path string) {
 			decompressedData, err := zlibDecompress(compressedData)
 			if err != nil {
 				fmt.Printf("[!] Error: Failed to decompress %s in PYZArchive, likely encrypted. Extracting as is", filenamepath)
-				p.writeRawData(filenamepath + ".pyc.encrypted", compressedData)
+				p.writeRawData(filenamepath + ".encrypted", compressedData)
 			} else {
 				p.writePyc(filenamepath, decompressedData)
 			}
