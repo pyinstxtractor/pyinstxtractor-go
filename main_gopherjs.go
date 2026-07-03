@@ -1,5 +1,4 @@
 //go:build gopherjs
-// +build gopherjs
 
 package main
 
