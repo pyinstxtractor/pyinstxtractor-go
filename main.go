@@ -3,15 +3,16 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
+	"fmt"
 	"io"
 	"os"
-	"fmt"
-	"bytes"
-	"strings"
 	"path/filepath"
-	"encoding/binary"
-	
+	"strings"
+
 	"pyinstxtractor-go/marshal"
+
 	"github.com/go-restruct/restruct"
 	// "github.com/k0kubun/pp/v3"
 )
@@ -98,7 +99,7 @@ func (p *PyInstArchive) CheckFile() bool {
 		fmt.Println("[!] Error : Missing cookie, unsupported pyinstaller version or not a pyinstaller archive")
 		return false
 	}
-	p.fPtr.Seek(p.cookiePosition + PYINST20_COOKIE_SIZE, io.SeekStart)
+	p.fPtr.Seek(p.cookiePosition+PYINST20_COOKIE_SIZE, io.SeekStart)
 
 	var cookie []byte = make([]byte, 64)
 	if _, err := p.fPtr.Read(cookie); err != nil {
@@ -229,6 +230,17 @@ func (p *PyInstArchive) ParseTOC() {
 	fmt.Printf("[+] Found %d files in CArchive\n", len(p.tableOfContents))
 }
 
+func (p *PyInstArchive) ensureUnique(fileName, ext string) string {
+	_, err := os.Stat(fileName + ext)
+	if err == nil {
+		// File exists
+		newName := fileName + "_" + randomString()
+		fmt.Printf("[!] Warning: %s already exists, saving as %s\n", fileName+ext, newName+ext)
+		return newName
+	}
+	return fileName
+}
+
 func (p *PyInstArchive) ExtractFiles() {
 	fmt.Println("[+] Beginning extraction...please standby")
 	cwd, _ := os.Getwd()
@@ -240,7 +252,7 @@ func (p *PyInstArchive) ExtractFiles() {
 	os.Chdir(extractionDir)
 
 	for _, entry := range p.tableOfContents {
-		p.fPtr.Seek(p.overlayPosition + int64(entry.EntryPosition), io.SeekStart)
+		p.fPtr.Seek(p.overlayPosition+int64(entry.EntryPosition), io.SeekStart)
 		data := make([]byte, entry.DataSize)
 		p.fPtr.Read(data)
 
@@ -272,22 +284,27 @@ func (p *PyInstArchive) ExtractFiles() {
 				os.MkdirAll(basePath, 0755)
 			}
 		}
-		if entry.TypeCompressedData == 's' {
+		switch entry.TypeCompressedData {
+		case 's':
 			// s -> ARCHIVE_ITEM_PYSOURCE
 			// Entry point are expected to be python scripts
 			fmt.Printf("[+] Possible entry point: %s.pyc\n", entry.Name)
+			entry.Name = p.ensureUnique(entry.Name, ".pyc")
 			if !p.gotPycMagic {
 				// if we don't have the pyc header yet, fix them in a later pass
 				p.barePycsList = append(p.barePycsList, entry.Name+".pyc")
 			}
 			p.writePyc(entry.Name+".pyc", data)
-		} else if entry.TypeCompressedData == 'M' || entry.TypeCompressedData == 'm' {
+		case 'M', 'm':
 			// M -> ARCHIVE_ITEM_PYPACKAGE
 			// m -> ARCHIVE_ITEM_PYMODULE
 			// packages and modules are pyc files with their header intact
 
 			// From PyInstaller 5.3 and above pyc headers are no longer stored
 			// https://github.com/pyinstaller/pyinstaller/commit/a97fdf
+
+			entry.Name = p.ensureUnique(entry.Name, ".pyc")
+
 			if data[2] == '\r' && data[3] == '\n' {
 				// < pyinstaller 5.3
 				if !p.gotPycMagic {
@@ -303,7 +320,8 @@ func (p *PyInstArchive) ExtractFiles() {
 				}
 				p.writePyc(entry.Name+".pyc", data)
 			}
-		} else {
+		default:
+			entry.Name = p.ensureUnique(entry.Name, "")
 			p.writeRawData(entry.Name, data)
 
 			if entry.TypeCompressedData == 'z' || entry.TypeCompressedData == 'Z' {
@@ -409,7 +427,7 @@ func (p *PyInstArchive) extractPYZ(path string) {
 			decompressedData, err := zlibDecompress(compressedData)
 			if err != nil {
 				fmt.Printf("[!] Error: Failed to decompress %s in PYZArchive, likely encrypted. Extracting as is", filenamepath)
-				p.writeRawData(filenamepath + ".encrypted", compressedData)
+				p.writeRawData(filenamepath+".encrypted", compressedData)
 			} else {
 				p.writePyc(filenamepath, decompressedData)
 			}

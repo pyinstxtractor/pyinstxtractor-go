@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"pyinstxtractor-go/marshal"
@@ -34,6 +35,7 @@ type PyInstArchive struct {
 	tableOfContents         []CTOCEntry
 	pycMagic                [4]byte
 	gotPycMagic             bool
+	writtenPycsList         []string
 	barePycsList            []*barePyc
 }
 
@@ -230,6 +232,16 @@ func (p *PyInstArchive) ParseTOC() {
 	appendLog(fmt.Sprintf("[+] Found %d files in CArchive\n", len(p.tableOfContents)))
 }
 
+func (p *PyInstArchive) ensureUnique(fileName, ext string) string {
+	if slices.Contains(p.writtenPycsList, fileName+ext) || slices.ContainsFunc(p.barePycsList, func(b *barePyc) bool { return b.filepath == fileName+ext }) {
+		// File exists
+		newName := fileName + "_" + randomString()
+		appendLog(fmt.Sprintf("[!] Warning: %s already exists, saving as %s\n", fileName+ext, newName+ext))
+		return newName
+	}
+	return fileName
+}
+
 func (p *PyInstArchive) ExtractFiles() {
 	appendLog("[+] Beginning extraction...please standby\n")
 
@@ -260,23 +272,28 @@ func (p *PyInstArchive) ExtractFiles() {
 			continue
 		}
 
-		if entry.TypeCompressedData == 's' {
+		switch entry.TypeCompressedData {
+		case 's':
 			// s -> ARCHIVE_ITEM_PYSOURCE
 			// Entry point are expected to be python scripts
 			appendLog(fmt.Sprintf("[+] Possible entry point: %s.pyc\n", entry.Name))
+			entry.Name = p.ensureUnique(entry.Name, ".pyc")
 			if !p.gotPycMagic {
 				// if we don't have the pyc header yet, fix them in a later pass
 				p.barePycsList = append(p.barePycsList, &barePyc{entry.Name + ".pyc", data})
 			} else {
 				p.writePyc(entry.Name+".pyc", data)
 			}
-		} else if entry.TypeCompressedData == 'M' || entry.TypeCompressedData == 'm' {
+		case 'M', 'm':
 			// M -> ARCHIVE_ITEM_PYPACKAGE
 			// m -> ARCHIVE_ITEM_PYMODULE
 			// packages and modules are pyc files with their header intact
 
 			// From PyInstaller 5.3 and above pyc headers are no longer stored
 			// https://github.com/pyinstaller/pyinstaller/commit/a97fdf
+
+			entry.Name = p.ensureUnique(entry.Name, ".pyc")
+
 			if data[2] == '\r' && data[3] == '\n' {
 				// < pyinstaller 5.3
 				if !p.gotPycMagic {
@@ -293,14 +310,15 @@ func (p *PyInstArchive) ExtractFiles() {
 					p.writePyc(entry.Name+".pyc", data)
 				}
 			}
-		} else if entry.TypeCompressedData == 'z' || entry.TypeCompressedData == 'Z' {
+		case 'z', 'Z':
 			if p.pythonMajorVersion == 3 {
 				p.extractPYZ(entry.Name, data)
 			} else {
 				appendLog(fmt.Sprintf("[!] Skipping pyz extraction as Python %d.%d is not supported\n", p.pythonMajorVersion, p.pythonMinorVersion))
 				p.writeRawData(entry.Name, data)
 			}
-		} else {
+		default:
+			entry.Name = p.ensureUnique(entry.Name, "")
 			p.writeRawData(entry.Name, data)
 		}
 	}
@@ -411,6 +429,7 @@ func (p *PyInstArchive) writePyc(path string, data []byte) {
 	}
 	f.Write(data)
 	p.outZip.Flush()
+	p.writtenPycsList = append(p.writtenPycsList, path)
 }
 
 func (p *PyInstArchive) writeRawData(path string, data []byte) {
