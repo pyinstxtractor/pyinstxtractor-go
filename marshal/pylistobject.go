@@ -17,7 +17,7 @@ func (plo *PyListObject) r_object() _object {
 	if plo.typecode == TYPE_SMALL_TUPLE {
 		var size int8
 		if err := binary.Read(plo.reader, binary.LittleEndian, &size); err != nil {
-			panic("Failed to read SMALl_TUPLE size")
+			panic("Failed to read SMALL_TUPLE size")
 		}
 		nItems = int(size)
 		// fmt.Println("small_tuple, size=", nItems)

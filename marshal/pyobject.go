@@ -20,6 +20,12 @@ func (po *PyObject) r_object() _object {
 	typecode := code &^ FLAG_REF
 	// fmt.Printf("%c ", typecode)
 	var obj _object
+	var refPosition int
+	if addRef {
+		// reserve ref
+		refPosition = len(_unmarshaler.refs)
+		_unmarshaler.refs = append(_unmarshaler.refs, nil)
+	}
 
 	switch typecode {
 	case TYPE_LIST, TYPE_TUPLE, TYPE_SMALL_TUPLE:
@@ -43,10 +49,10 @@ func (po *PyObject) r_object() _object {
 			panic("Failed to read TYPE_REF")
 		}
 
-		if n < 1 || int(n) >= len(_unmarshaler.refs) {
+		if n < 0 || int(n) > len(_unmarshaler.refs) {
 			panic("TYPE_REF out of bounds")
 		}
-		n -= 1
+
 		// fmt.Println("Get ref", n)
 		obj = _unmarshaler.refs[n]
 
@@ -56,7 +62,7 @@ func (po *PyObject) r_object() _object {
 	}
 	if addRef {
 		// fmt.Println("Added ref", len(_unmarshaler.refs))
-		_unmarshaler.refs = append(_unmarshaler.refs, obj)
+		_unmarshaler.refs[int32(refPosition)] = obj
 	}
 	return obj
 }
