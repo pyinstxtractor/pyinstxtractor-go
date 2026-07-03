@@ -56,7 +56,7 @@ func randomString() string {
 	var randomBytes []byte = make([]byte, 16)
 
 	for i := 0; i < 16; i++ {
-		randomBytes = append(randomBytes, CHARSET[rand.Intn(len(CHARSET))])
+		randomBytes[i] = CHARSET[rand.Intn(len(CHARSET))]
 	}
 	return string(randomBytes)
 }
