@@ -252,6 +252,7 @@ func (p *PyInstArchive) ExtractFiles() {
 	os.Chdir(extractionDir)
 
 	for _, entry := range p.tableOfContents {
+		name := sanitizeEntryName(entry.Name)
 		p.fPtr.Seek(p.overlayPosition+int64(entry.EntryPosition), io.SeekStart)
 		data := make([]byte, entry.DataSize)
 		p.fPtr.Read(data)
@@ -261,13 +262,13 @@ func (p *PyInstArchive) ExtractFiles() {
 			compressedData := data[:]
 			data, err = zlibDecompress(compressedData)
 			if err != nil {
-				fmt.Printf("[!] Error: Failed to decompress %s in CArchive, extracting as-is", entry.Name)
-				p.writeRawData(entry.Name, compressedData)
+				fmt.Printf("[!] Error: Failed to decompress %s in CArchive, extracting as-is", name)
+				p.writeRawData(name, compressedData)
 				continue
 			}
 
 			if uint(len(data)) != entry.UncompressedDataSize {
-				fmt.Printf("[!] Warning: Decompressed size mismatch for file %s\n", entry.Name)
+				fmt.Printf("[!] Warning: Decompressed size mismatch for file %s\n", name)
 			}
 		}
 
@@ -278,7 +279,7 @@ func (p *PyInstArchive) ExtractFiles() {
 			continue
 		}
 
-		basePath := filepath.Dir(entry.Name)
+		basePath := filepath.Dir(name)
 		if basePath != "." {
 			if _, err := os.Stat(basePath); os.IsNotExist(err) {
 				os.MkdirAll(basePath, 0755)
@@ -288,13 +289,13 @@ func (p *PyInstArchive) ExtractFiles() {
 		case 's':
 			// s -> ARCHIVE_ITEM_PYSOURCE
 			// Entry point are expected to be python scripts
-			fmt.Printf("[+] Possible entry point: %s.pyc\n", entry.Name)
-			entry.Name = p.ensureUnique(entry.Name, ".pyc")
+			fmt.Printf("[+] Possible entry point: %s.pyc\n", name)
+			name = p.ensureUnique(name, ".pyc")
 			if !p.gotPycMagic {
 				// if we don't have the pyc header yet, fix them in a later pass
-				p.barePycsList = append(p.barePycsList, entry.Name+".pyc")
+				p.barePycsList = append(p.barePycsList, name+".pyc")
 			}
-			p.writePyc(entry.Name+".pyc", data)
+			p.writePyc(name+".pyc", data)
 		case 'M', 'm':
 			// M -> ARCHIVE_ITEM_PYPACKAGE
 			// m -> ARCHIVE_ITEM_PYMODULE
@@ -303,7 +304,7 @@ func (p *PyInstArchive) ExtractFiles() {
 			// From PyInstaller 5.3 and above pyc headers are no longer stored
 			// https://github.com/pyinstaller/pyinstaller/commit/a97fdf
 
-			entry.Name = p.ensureUnique(entry.Name, ".pyc")
+			name = p.ensureUnique(name, ".pyc")
 
 			if data[2] == '\r' && data[3] == '\n' {
 				// < pyinstaller 5.3
@@ -311,22 +312,22 @@ func (p *PyInstArchive) ExtractFiles() {
 					copy(p.pycMagic[:], data[0:4])
 					p.gotPycMagic = true
 				}
-				p.writeRawData(entry.Name+".pyc", data)
+				p.writeRawData(name+".pyc", data)
 			} else {
 				// >= pyinstaller 5.3
 				if !p.gotPycMagic {
 					// if we don't have the pyc header yet, fix them in a later pass
-					p.barePycsList = append(p.barePycsList, entry.Name+".pyc")
+					p.barePycsList = append(p.barePycsList, name+".pyc")
 				}
-				p.writePyc(entry.Name+".pyc", data)
+				p.writePyc(name+".pyc", data)
 			}
 		default:
-			entry.Name = p.ensureUnique(entry.Name, "")
-			p.writeRawData(entry.Name, data)
+			name = p.ensureUnique(name, "")
+			p.writeRawData(name, data)
 
 			if entry.TypeCompressedData == 'z' || entry.TypeCompressedData == 'Z' {
 				if p.pythonMajorVersion == 3 {
-					p.extractPYZ(entry.Name)
+					p.extractPYZ(name)
 				} else {
 					fmt.Printf("[!] Skipping pyz extraction as Python %d.%d is not supported\n", p.pythonMajorVersion, p.pythonMinorVersion)
 				}
@@ -458,11 +459,17 @@ func (p *PyInstArchive) writePyc(path string, data []byte) {
 	f.Write(data)
 }
 
+// sanitizeEntryName maps an archive entry name to a relative path that stays inside the extraction directory.
+func sanitizeEntryName(name string) string {
+	name = strings.Trim(name, "\x00")
+	name = strings.ReplaceAll(name, "\\", string(os.PathSeparator))
+	name = strings.ReplaceAll(name, "/", string(os.PathSeparator))
+	name = strings.ReplaceAll(name, "..", "__")
+	return strings.TrimLeft(name, string(os.PathSeparator))
+}
+
 func (p *PyInstArchive) writeRawData(path string, data []byte) {
-	path = strings.Trim(path, "\x00")
-	path = strings.ReplaceAll(path, "\\", string(os.PathSeparator))
-	path = strings.ReplaceAll(path, "/", string(os.PathSeparator))
-	path = strings.ReplaceAll(path, "..", "__")
+	path = sanitizeEntryName(path)
 
 	dir := filepath.Dir(path)
 	if dir != "." {
